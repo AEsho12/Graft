@@ -1,11 +1,12 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import './App.css'
 import { AppLayout } from './layout/AppLayout'
+import { DesktopTitlebar } from './layout/DesktopTitlebar'
 import { AnalyticsPage } from './pages/AnalyticsPage'
-import { AuthPage } from './pages/AuthPage'
 import { CatalogPage } from './pages/CatalogPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { InstalledPage } from './pages/InstalledPage'
+import LoginPage from './pages/LoginPage'
 import { PluginDetailPage } from './pages/PluginDetailPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { UpdatesPage } from './pages/UpdatesPage'
@@ -26,7 +27,7 @@ function AppRoutes() {
   }
 
   if (isConfigured && !user) {
-    return <AuthPage />
+    return <LoginPage />
   }
 
   return (
@@ -51,7 +52,12 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <AppStateProvider>
-          <AppRoutes />
+          <div className="desktop-root">
+            <DesktopTitlebar />
+            <div className="desktop-content">
+              <AppRoutes />
+            </div>
+          </div>
         </AppStateProvider>
       </AuthProvider>
     </BrowserRouter>

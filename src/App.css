@@ -19,16 +19,62 @@
 }
 
 .app-shell {
-  min-height: 100vh;
+  min-height: calc(100vh - 36px);
+  position: relative;
+  overflow: visible;
+}
+
+.app-shell-inner {
+  min-height: calc(100vh - 36px);
   display: grid;
   grid-template-columns: 260px 1fr;
+  grid-template-rows: 1fr;
   background: radial-gradient(circle at 20% -10%, #fdf4dc 0%, transparent 50%),
     radial-gradient(circle at 100% 0%, #e8eefb 0%, transparent 46%), var(--bg);
   color: var(--text);
   font-family: var(--font-copy);
+  border-radius: 52px;
+  overflow: hidden;
+  border: 1px solid #d8d6cf;
+  box-shadow: 0 12px 30px rgba(20, 26, 38, 0.18);
+}
+
+.custom-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 12px;
+  background: #ffffff;
+  app-region: drag;
+  -webkit-app-region: drag;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 9999;
+}
+
+.custom-titlebar button,
+.custom-titlebar a,
+.custom-titlebar input {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-text {
+  position: relative;
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 .sidebar {
+  grid-row: 1;
   border-right: 1px solid var(--line);
   padding: 20px 14px;
   display: flex;
@@ -90,16 +136,29 @@
 }
 
 .content {
+  grid-row: 1;
   padding: 18px 26px 28px;
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
 
+.desktop-root {
+  height: 100vh;
+  background: radial-gradient(circle at 20% -10%, #fdf4dc 0%, transparent 50%),
+    radial-gradient(circle at 100% 0%, #e8eefb 0%, transparent 46%), var(--bg);
+  overflow: hidden;
+}
+
+.desktop-content {
+  margin-top: 36px;
+  height: calc(100vh - 36px);
+  overflow: auto;
+}
+
 .topbar {
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: var(--bg-panel);
   padding: 10px 14px;
   display: flex;
   align-items: center;
@@ -109,11 +168,80 @@
 .topbar p {
   margin: 0;
   color: var(--text-soft);
+  user-select: none;
 }
 
 .topbar-actions {
   display: flex;
   gap: 8px;
+  app-region: no-drag !important;
+  -webkit-app-region: no-drag !important;
+}
+
+.topbar-actions * {
+  app-region: no-drag !important;
+  -webkit-app-region: no-drag !important;
+}
+
+.window-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.window-dot {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 0;
+  padding: 0;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.window-dot.close {
+  background: #ff5f57;
+}
+
+.window-dot.minimize {
+  background: #ffbd2e;
+}
+
+.window-dot.maximize {
+  background: #28c840;
+}
+
+.window-dot::after {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
+  color: rgba(43, 43, 43, 0.92);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.window-dot.close::after {
+  content: '×';
+}
+
+.window-dot.minimize::after {
+  content: '−';
+}
+
+.window-dot.maximize::after {
+  content: '+';
+}
+
+.window-controls:hover .window-dot::after {
+  opacity: 1;
 }
 
 .catalog-layout {
@@ -383,14 +511,6 @@ h1 {
   flex-wrap: wrap;
 }
 
-button {
-  border: 1px solid transparent;
-  border-radius: 10px;
-  font-family: inherit;
-  cursor: pointer;
-  padding: 8px 11px;
-}
-
 .link-button {
   text-decoration: none;
   display: inline-flex;
@@ -496,11 +616,17 @@ button {
 @media (max-width: 1160px) {
   .app-shell {
     grid-template-columns: 1fr;
+    grid-template-rows: 36px auto 1fr;
   }
 
   .sidebar {
+    grid-row: 2;
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+
+  .content {
+    grid-row: 3;
   }
 
   .sidebar nav {

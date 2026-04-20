@@ -1,11 +1,10 @@
-import { useState } from 'react'
-import { useAuth } from '../state/AuthContext'
+import { GalleryVerticalEnd } from 'lucide-react'
+import heroImage from '@/assets/hero.png'
+import { LoginForm } from '@/components/login-form'
+import { useAuth } from '@/state/AuthContext'
 
 export function AuthPage() {
-  const { isConfigured, signInWithMagicLink, signInWithPassword, signUpWithPassword } = useAuth()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [notice, setNotice] = useState<string | null>(null)
+  const { isConfigured } = useAuth()
 
   if (!isConfigured) {
     return (
@@ -23,58 +22,29 @@ export function AuthPage() {
   }
 
   return (
-    <div className="auth-shell">
-      <article className="auth-card">
-        <h1>Sign in to Graft</h1>
-        <p>Use your account to sync installs, updates, and plugin ownership analytics.</p>
-
-        <label>
-          Email
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" />
-        </label>
-
-        <label>
-          Password
-          <input
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            type="password"
-            minLength={8}
-          />
-        </label>
-
-        <div className="auth-actions">
-          <button
-            className="primary"
-            onClick={async () => {
-              const error = await signInWithPassword(email, password)
-              setNotice(error ?? 'Signed in successfully.')
-            }}
-          >
-            Sign In
-          </button>
-          <button
-            className="secondary"
-            onClick={async () => {
-              const error = await signUpWithPassword(email, password)
-              setNotice(error ?? 'Check your email to confirm your account.')
-            }}
-          >
-            Create Account
-          </button>
-          <button
-            className="ghost"
-            onClick={async () => {
-              const error = await signInWithMagicLink(email)
-              setNotice(error ?? 'Magic link sent to your email.')
-            }}
-          >
-            Send Magic Link
-          </button>
+    <div className="grid min-h-svh lg:grid-cols-2">
+      <div className="flex flex-col gap-4 p-6 md:p-10">
+        <div className="flex justify-center gap-2 md:justify-start">
+          <a href="#" className="flex items-center gap-2 font-medium">
+            <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <GalleryVerticalEnd className="size-4" />
+            </div>
+            Graft
+          </a>
         </div>
-
-        {notice ? <p className="subtle">{notice}</p> : null}
-      </article>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="w-full max-w-xs">
+            <LoginForm />
+          </div>
+        </div>
+      </div>
+      <div className="relative hidden bg-muted lg:block">
+        <img
+          src={heroImage}
+          alt="Workspace preview"
+          className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
+        />
+      </div>
     </div>
   )
 }
