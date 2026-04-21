@@ -1,10 +1,22 @@
 import { seedState } from '../data/mockData'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
-import type { AppState, InstalledPlugin, Plugin, PluginVersion, UpdateRun, UpdateStage } from '../types'
+import type {
+  ActivityAction,
+  ActivityEntry,
+  ActivityStatus,
+  AppState,
+  InstalledPlugin,
+  Plugin,
+  PluginVersion,
+  UpdateRun,
+  UpdateStage,
+} from '../types'
 
 const STORAGE_KEY = 'graft.app.state.v1'
+const ACTIVITY_STORAGE_KEY = 'graft.activity.v1'
+const MAX_ACTIVITY_ITEMS = 200
 
-const sleep = (ms = 120) => new Promise((resolve) => setTimeout(resolve, ms))
+const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function normalizeState(state: Partial<AppState>): AppState {
   return {
@@ -31,6 +43,60 @@ function loadState(): AppState {
 
 function saveState(state: AppState): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+}
+
+function loadActivityLog(): ActivityEntry[] {
+  try {
+    const raw = localStorage.getItem(ACTIVITY_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+
+    return parsed
+      .map((item) => {
+        const record = item as Record<string, unknown>
+        return {
+          id: String(record.id ?? crypto.randomUUID()),
+          pluginId: String(record.pluginId ?? ''),
+          pluginName: String(record.pluginName ?? 'Unknown plugin'),
+          action: (record.action as ActivityAction) ?? 'install',
+          status: (record.status as ActivityStatus) ?? 'info',
+          message: String(record.message ?? ''),
+          createdAt: String(record.createdAt ?? new Date().toISOString()),
+        }
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, MAX_ACTIVITY_ITEMS)
+  } catch {
+    return []
+  }
+}
+
+export function getCachedAppState(): AppState {
+  return loadState()
+}
+
+export function getCachedActivityLog(): ActivityEntry[] {
+  return loadActivityLog()
+}
+
+function saveActivityLog(entries: ActivityEntry[]): void {
+  localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(entries))
+}
+
+function appendActivityLog(entry: Omit<ActivityEntry, 'id' | 'createdAt'>): void {
+  const nextEntry: ActivityEntry = {
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    ...entry,
+  }
+
+  const currentEntries = loadActivityLog()
+  saveActivityLog([nextEntry, ...currentEntries].slice(0, MAX_ACTIVITY_ITEMS))
+}
+
+function getPluginNameById(state: AppState, pluginId: string): string {
+  return state.plugins.find((item) => item.id === pluginId)?.name ?? pluginId
 }
 
 async function getSupabaseUserId(): Promise<string | null> {
@@ -142,8 +208,6 @@ async function fetchFromSupabaseOrNull(): Promise<AppState | null> {
 }
 
 export async function fetchAppState(): Promise<AppState> {
-  await sleep()
-
   if (isSupabaseConfigured) {
     const remote = await fetchFromSupabaseOrNull()
     if (remote) {
@@ -155,6 +219,10 @@ export async function fetchAppState(): Promise<AppState> {
   const state = loadState()
   saveState(state)
   return state
+}
+
+export async function fetchActivityLog(): Promise<ActivityEntry[]> {
+  return loadActivityLog()
 }
 
 async function upsertInstallRemote(userId: string, pluginId: string, installedVersion: string): Promise<void> {
@@ -171,20 +239,42 @@ async function upsertInstallRemote(userId: string, pluginId: string, installedVe
 export async function installPlugin(pluginId: string): Promise<AppState> {
   await sleep()
   const state = loadState()
+  const pluginName = getPluginNameById(state, pluginId)
   const alreadyInstalled = state.installed.some((item) => item.pluginId === pluginId)
 
   if (alreadyInstalled) {
+    appendActivityLog({
+      pluginId,
+      pluginName,
+      action: 'install',
+      status: 'info',
+      message: `${pluginName} is already installed.`,
+    })
     return fetchAppState()
   }
 
   const plugin = state.plugins.find((item) => item.id === pluginId)
   if (!plugin) {
+    appendActivityLog({
+      pluginId,
+      pluginName,
+      action: 'install',
+      status: 'failed',
+      message: 'Install failed because the plugin could not be found.',
+    })
     return fetchAppState()
   }
 
   const userId = await getSupabaseUserId()
   if (userId) {
     await upsertInstallRemote(userId, pluginId, plugin.version)
+    appendActivityLog({
+      pluginId,
+      pluginName: plugin.name,
+      action: 'install',
+      status: 'success',
+      message: `Installed version ${plugin.version}.`,
+    })
     return fetchAppState()
   }
 
@@ -201,30 +291,54 @@ export async function installPlugin(pluginId: string): Promise<AppState> {
   }
 
   saveState(nextState)
+  appendActivityLog({
+    pluginId,
+    pluginName: plugin.name,
+    action: 'install',
+    status: 'success',
+    message: `Installed version ${plugin.version}.`,
+  })
   return nextState
 }
 
 export async function uninstallPlugin(pluginId: string): Promise<AppState> {
   await sleep()
+  const state = loadState()
+  const pluginName = getPluginNameById(state, pluginId)
   const userId = await getSupabaseUserId()
 
   if (userId && supabase) {
     await supabase.from('installs').delete().eq('user_id', userId).eq('plugin_id', pluginId)
+    appendActivityLog({
+      pluginId,
+      pluginName,
+      action: 'uninstall',
+      status: 'success',
+      message: 'Plugin uninstalled.',
+    })
     return fetchAppState()
   }
 
-  const state = loadState()
   const nextState: AppState = {
     ...state,
     installed: state.installed.filter((item) => item.pluginId !== pluginId),
   }
 
   saveState(nextState)
+  appendActivityLog({
+    pluginId,
+    pluginName,
+    action: 'uninstall',
+    status: 'success',
+    message: 'Plugin uninstalled.',
+  })
   return nextState
 }
 
 export async function pinPlugin(pluginId: string, version: string): Promise<AppState> {
   await sleep()
+  const state = loadState()
+  const pluginName = getPluginNameById(state, pluginId)
   const userId = await getSupabaseUserId()
 
   if (userId && supabase) {
@@ -233,10 +347,16 @@ export async function pinPlugin(pluginId: string, version: string): Promise<AppS
       .update({ pinned_version: version, auto_update: false })
       .eq('user_id', userId)
       .eq('plugin_id', pluginId)
+    appendActivityLog({
+      pluginId,
+      pluginName,
+      action: 'pin',
+      status: 'success',
+      message: `Pinned to version ${version}.`,
+    })
     return fetchAppState()
   }
 
-  const state = loadState()
   const nextState: AppState = {
     ...state,
     installed: state.installed.map((item) =>
@@ -251,15 +371,30 @@ export async function pinPlugin(pluginId: string, version: string): Promise<AppS
   }
 
   saveState(nextState)
+  appendActivityLog({
+    pluginId,
+    pluginName,
+    action: 'pin',
+    status: 'success',
+    message: `Pinned to version ${version}.`,
+  })
   return nextState
 }
 
 export async function rollbackPlugin(pluginId: string): Promise<AppState> {
   await sleep()
   const state = loadState()
+  const pluginName = getPluginNameById(state, pluginId)
   const run = state.updates.find((item) => item.pluginId === pluginId)
 
   if (!run) {
+    appendActivityLog({
+      pluginId,
+      pluginName,
+      action: 'rollback',
+      status: 'failed',
+      message: 'Rollback failed because there is no update history for this plugin.',
+    })
     return fetchAppState()
   }
 
@@ -271,6 +406,13 @@ export async function rollbackPlugin(pluginId: string): Promise<AppState> {
       .eq('user_id', userId)
       .eq('plugin_id', pluginId)
 
+    appendActivityLog({
+      pluginId,
+      pluginName,
+      action: 'rollback',
+      status: 'success',
+      message: `Rolled back to version ${run.fromVersion}.`,
+    })
     return fetchAppState()
   }
 
@@ -288,6 +430,13 @@ export async function rollbackPlugin(pluginId: string): Promise<AppState> {
   }
 
   saveState(nextState)
+  appendActivityLog({
+    pluginId,
+    pluginName,
+    action: 'rollback',
+    status: 'success',
+    message: `Rolled back to version ${run.fromVersion}.`,
+  })
   return nextState
 }
 
@@ -298,8 +447,16 @@ export async function updatePluginVersion(
 ): Promise<AppState> {
   await sleep()
   const state = loadState()
+  const pluginName = getPluginNameById(state, pluginId)
   const currentInstall = state.installed.find((item) => item.pluginId === pluginId)
   if (!currentInstall) {
+    appendActivityLog({
+      pluginId,
+      pluginName,
+      action: 'update',
+      status: 'failed',
+      message: 'Update failed because this plugin is not installed.',
+    })
     return fetchAppState()
   }
 
@@ -308,10 +465,24 @@ export async function updatePluginVersion(
   )
 
   if (!targetVersion) {
+    appendActivityLog({
+      pluginId,
+      pluginName,
+      action: 'update',
+      status: 'failed',
+      message: `Update failed because version ${toVersion} was not found.`,
+    })
     throw new Error('Selected version was not found.')
   }
 
   if (targetVersion.requiresReview && !approveRisk) {
+    appendActivityLog({
+      pluginId,
+      pluginName,
+      action: 'update',
+      status: 'failed',
+      message: `Update to ${toVersion} blocked until risk approval is confirmed.`,
+    })
     throw new Error('This version requires explicit approval due to permission/capability risk.')
   }
 
@@ -352,6 +523,13 @@ export async function updatePluginVersion(
       created_at: newRun.createdAt,
     })
 
+    appendActivityLog({
+      pluginId,
+      pluginName,
+      action: 'update',
+      status: 'success',
+      message: `Updated from ${newRun.fromVersion} to ${newRun.toVersion}.`,
+    })
     return fetchAppState()
   }
 
@@ -370,5 +548,12 @@ export async function updatePluginVersion(
   }
 
   saveState(nextState)
+  appendActivityLog({
+    pluginId,
+    pluginName,
+    action: 'update',
+    status: 'success',
+    message: `Updated from ${newRun.fromVersion} to ${newRun.toVersion}.`,
+  })
   return nextState
 }

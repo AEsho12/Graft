@@ -68,3 +68,16 @@ export type AppState = {
   installed: InstalledPlugin[]
   updates: UpdateRun[]
 }
+
+export type ActivityStatus = 'success' | 'failed' | 'info'
+export type ActivityAction = 'install' | 'uninstall' | 'update' | 'pin' | 'rollback'
+
+export type ActivityEntry = {
+  id: string
+  pluginId: string
+  pluginName: string
+  action: ActivityAction
+  status: ActivityStatus
+  message: string
+  createdAt: string
+}

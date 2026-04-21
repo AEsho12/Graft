@@ -6,7 +6,7 @@ export function DashboardPage() {
   if (!state) return null
 
   return (
-    <section className="panel-grid metrics-grid">
+    <section className="panel-grid metrics-grid dashboard-page">
       <article className="metric-card">
         <p>Installed Plugins</p>
         <h2>{state.installed.length}</h2>

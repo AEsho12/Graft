@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAppState } from '../state/AppStateContext'
 import type { Plugin } from '../types'
@@ -6,6 +6,52 @@ import type { Plugin } from '../types'
 function formatRisk(risk: Plugin['risk']) {
   return risk.toLowerCase()
 }
+
+type PluginCardProps = {
+  plugin: Plugin
+  isInstalled: boolean
+  onInstall: (pluginId: string) => void
+  onUninstall: (pluginId: string) => void
+}
+
+const PluginCard = memo(function PluginCard({
+  plugin,
+  isInstalled,
+  onInstall,
+  onUninstall,
+}: PluginCardProps) {
+  return (
+    <article className="plugin-card">
+      <div className="plugin-card-top">
+        <div>
+          <h3>{plugin.name}</h3>
+          <p>{plugin.publisher}</p>
+        </div>
+        <span className={`risk ${formatRisk(plugin.risk)}`}>{plugin.risk}</span>
+      </div>
+      <p className="desc">{plugin.description}</p>
+      <div className="meta-row">
+        <span>{plugin.rating.toFixed(1)} ★</span>
+        <span>{plugin.installs} installs</span>
+        <span>{plugin.appProfile}</span>
+      </div>
+      <div className="card-actions">
+        {isInstalled ? (
+          <button className="secondary" onClick={() => onUninstall(plugin.id)}>
+            Uninstall
+          </button>
+        ) : (
+          <button className="primary" onClick={() => onInstall(plugin.id)}>
+            Install
+          </button>
+        )}
+        <Link className="ghost link-button" to={`/catalog/${plugin.id}`}>
+          Details
+        </Link>
+      </div>
+    </article>
+  )
+})
 
 export function CatalogPage() {
   const { state, installPlugin, uninstallPlugin } = useAppState()
@@ -20,7 +66,16 @@ export function CatalogPage() {
     return state.plugins.filter((plugin) => plugin.category === selectedCategory)
   }, [selectedCategory, state.plugins])
 
-  const installedIds = new Set(state.installed.map((item) => item.pluginId))
+  const installedIds = useMemo(
+    () => new Set(state.installed.map((item) => item.pluginId)),
+    [state.installed],
+  )
+  const handleInstall = useCallback((pluginId: string) => {
+    void installPlugin(pluginId)
+  }, [installPlugin])
+  const handleUninstall = useCallback((pluginId: string) => {
+    void uninstallPlugin(pluginId)
+  }, [uninstallPlugin])
 
   return (
     <section className="catalog-layout">
@@ -60,41 +115,15 @@ export function CatalogPage() {
       </div>
 
       <div className="plugin-grid">
-        {catalog.map((plugin) => {
-          const isInstalled = installedIds.has(plugin.id)
-
-          return (
-            <article key={plugin.id} className="plugin-card">
-              <div className="plugin-card-top">
-                <div>
-                  <h3>{plugin.name}</h3>
-                  <p>{plugin.publisher}</p>
-                </div>
-                <span className={`risk ${formatRisk(plugin.risk)}`}>{plugin.risk}</span>
-              </div>
-              <p className="desc">{plugin.description}</p>
-              <div className="meta-row">
-                <span>{plugin.rating.toFixed(1)} ★</span>
-                <span>{plugin.installs} installs</span>
-                <span>{plugin.appProfile}</span>
-              </div>
-              <div className="card-actions">
-                {isInstalled ? (
-                  <button className="secondary" onClick={() => void uninstallPlugin(plugin.id)}>
-                    Uninstall
-                  </button>
-                ) : (
-                  <button className="primary" onClick={() => void installPlugin(plugin.id)}>
-                    Install
-                  </button>
-                )}
-                <Link className="ghost link-button" to={`/catalog/${plugin.id}`}>
-                  Details
-                </Link>
-              </div>
-            </article>
-          )
-        })}
+        {catalog.map((plugin) => (
+          <PluginCard
+            key={plugin.id}
+            plugin={plugin}
+            isInstalled={installedIds.has(plugin.id)}
+            onInstall={handleInstall}
+            onUninstall={handleUninstall}
+          />
+        ))}
       </div>
     </section>
   )

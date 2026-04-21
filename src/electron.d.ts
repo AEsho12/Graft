@@ -8,6 +8,8 @@ declare global {
         toggleMaximize: () => Promise<boolean>
         close: () => Promise<void>
       }
+      openExternal?: (url: string) => Promise<boolean>
+      onAuthCallback?: (callback: (url: string) => void) => () => void
     }
   }
 }

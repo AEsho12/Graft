@@ -1,20 +1,15 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import {
-  fetchAppState,
-  installPlugin as installPluginRequest,
-  pinPlugin as pinPluginRequest,
-  rollbackPlugin as rollbackPluginRequest,
-  uninstallPlugin as uninstallPluginRequest,
-  updatePluginVersion as updatePluginVersionRequest,
-} from '../api/client'
 import { useAuth } from './AuthContext'
-import type { AppState } from '../types'
+import { readCachedActivityLog, readCachedAppState } from './appStateCache'
+import type { ActivityEntry, AppState } from '../types'
 
 type AppStateContextValue = {
   state: AppState | null
+  activity: ActivityEntry[]
   loading: boolean
   refresh: () => Promise<void>
+  prefetchCoreData: () => Promise<void>
   installPlugin: (pluginId: string) => Promise<void>
   uninstallPlugin: (pluginId: string) => Promise<void>
   pinPlugin: (pluginId: string, version: string) => Promise<void>
@@ -23,50 +18,115 @@ type AppStateContextValue = {
 }
 
 const AppStateContext = createContext<AppStateContextValue | undefined>(undefined)
+type ApiClientModule = typeof import('../api/client')
+let apiClientPromise: Promise<ApiClientModule> | null = null
+
+async function loadApiClient(): Promise<ApiClientModule> {
+  if (!apiClientPromise) {
+    apiClientPromise = import('../api/client')
+  }
+  return apiClientPromise
+}
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
-  const [state, setState] = useState<AppState | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [state, setState] = useState<AppState | null>(() => readCachedAppState())
+  const [activity, setActivity] = useState<ActivityEntry[]>(() => readCachedActivityLog())
+  const [loading, setLoading] = useState(state === null)
+  const prefetchPromiseRef = useRef<Promise<void> | null>(null)
+  const lastPrefetchAtRef = useRef(0)
 
-  const refresh = async () => {
-    setLoading(true)
-    const nextState = await fetchAppState()
+  const refresh = useCallback(async () => {
+    if (!state) setLoading(true)
+    const apiClient = await loadApiClient()
+    const [nextState, nextActivity] = await Promise.all([
+      apiClient.fetchAppState(),
+      apiClient.fetchActivityLog(),
+    ])
     setState(nextState)
+    setActivity(nextActivity)
     setLoading(false)
-  }
+  }, [state])
 
   useEffect(() => {
     void refresh()
   }, [user?.id])
 
+  const prefetchCoreData = useCallback(async () => {
+    const now = Date.now()
+    if (prefetchPromiseRef.current) {
+      await prefetchPromiseRef.current
+      return
+    }
+    if (now - lastPrefetchAtRef.current < 30_000) {
+      return
+    }
+
+    prefetchPromiseRef.current = (async () => {
+      const apiClient = await loadApiClient()
+      const [nextState, nextActivity] = await Promise.all([
+        apiClient.fetchAppState(),
+        apiClient.fetchActivityLog(),
+      ])
+      setState(nextState)
+      setActivity(nextActivity)
+      lastPrefetchAtRef.current = Date.now()
+    })()
+
+    try {
+      await prefetchPromiseRef.current
+    } finally {
+      prefetchPromiseRef.current = null
+    }
+  }, [])
+
   const value = useMemo<AppStateContextValue>(
     () => ({
       state,
+      activity,
       loading,
       refresh,
+      prefetchCoreData,
       installPlugin: async (pluginId: string) => {
-        const nextState = await installPluginRequest(pluginId)
+        const apiClient = await loadApiClient()
+        const nextState = await apiClient.installPlugin(pluginId)
+        const nextActivity = await apiClient.fetchActivityLog()
         setState(nextState)
+        setActivity(nextActivity)
       },
       uninstallPlugin: async (pluginId: string) => {
-        const nextState = await uninstallPluginRequest(pluginId)
+        const apiClient = await loadApiClient()
+        const nextState = await apiClient.uninstallPlugin(pluginId)
+        const nextActivity = await apiClient.fetchActivityLog()
         setState(nextState)
+        setActivity(nextActivity)
       },
       pinPlugin: async (pluginId: string, version: string) => {
-        const nextState = await pinPluginRequest(pluginId, version)
+        const apiClient = await loadApiClient()
+        const nextState = await apiClient.pinPlugin(pluginId, version)
+        const nextActivity = await apiClient.fetchActivityLog()
         setState(nextState)
+        setActivity(nextActivity)
       },
       rollbackPlugin: async (pluginId: string) => {
-        const nextState = await rollbackPluginRequest(pluginId)
+        const apiClient = await loadApiClient()
+        const nextState = await apiClient.rollbackPlugin(pluginId)
+        const nextActivity = await apiClient.fetchActivityLog()
         setState(nextState)
+        setActivity(nextActivity)
       },
       updatePluginVersion: async (pluginId: string, version: string, approveRisk: boolean) => {
-        const nextState = await updatePluginVersionRequest(pluginId, version, approveRisk)
-        setState(nextState)
+        const apiClient = await loadApiClient()
+        try {
+          const nextState = await apiClient.updatePluginVersion(pluginId, version, approveRisk)
+          setState(nextState)
+        } finally {
+          const nextActivity = await apiClient.fetchActivityLog()
+          setActivity(nextActivity)
+        }
       },
     }),
-    [state, loading],
+    [state, activity, loading, prefetchCoreData],
   )
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>
